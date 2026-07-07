@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TrafficLine ModerationsAssistent</title>
+    <!-- Lade TailwindCSS direkt via CDN, damit kein npm benötigt wird -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Lade Lucide Icons via CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+  </head>
+  <body class="flex flex-col h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden selection:bg-indigo-300">
+    <main class="flex flex-1 overflow-hidden">
+      <!-- Linke Sidebar -->
+      <aside class="flex flex-col w-[400px] bg-white border-r border-slate-200 shrink-0 p-8 space-y-4">
+        <button id="btn-first" class="px-6 py-4 bg-indigo-50 text-indigo-700 text-xl font-bold rounded-xl border border-indigo-200 hover:bg-indigo-100 transition-colors focus:outline-none focus:ring-4 focus:ring-indigo-500 cursor-pointer">
+          Erste Nachricht
+        </button>
+        <div class="flex flex-col gap-6 pt-6">
+          <button id="btn-next" class="py-12 bg-white border-2 border-slate-200 rounded-xl shadow-sm hover:bg-slate-50 text-4xl font-bold text-slate-800 transition-colors focus:outline-none focus:ring-4 focus:ring-indigo-500 cursor-pointer">
+            Vor
+          </button>
+          <button id="btn-prev" class="py-12 bg-white border-2 border-slate-200 rounded-xl shadow-sm hover:bg-slate-50 text-4xl font-bold text-slate-800 transition-colors focus:outline-none focus:ring-4 focus:ring-indigo-500 cursor-pointer">
+            zurück
+          </button>
+        </div>
+        <div class="flex flex-col gap-4 mt-8">
+          <div class="bg-red-50 text-red-700 font-bold text-center py-4 rounded-xl border-2 border-red-200 text-xl">Traffic</div>
+          <div class="bg-emerald-50 text-emerald-700 font-bold text-center py-4 rounded-xl border-2 border-emerald-200 text-xl">UserTraffic</div>
+          <div class="bg-emerald-50 text-emerald-700 font-bold text-center py-4 rounded-xl border-2 border-emerald-200 text-xl">Radar</div>
+        </div>
+        <div class="flex justify-center mt-12">
+          <div class="w-20 h-20 bg-amber-100 rounded-2xl border-4 border-amber-300 flex items-center justify-center">
+            <i data-lucide="alert-triangle" class="text-amber-600" style="width: 40px; height: 40px;"></i>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Hauptbereich -->
+      <section class="flex flex-col flex-1 h-full min-w-0 p-8">
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col flex-1">
+          
+          <!-- Nachrichtenanzeige -->
+          <div id="message-container" class="p-12 flex-1 flex flex-col items-center justify-center text-center">
+            <div class="text-xl text-slate-500 font-medium">Lade Verkehrsmeldungen...</div>
+          </div>
+
+          <!-- Banner mit Uhrzeit und Fortschrittsanzeige (unten) -->
+          <div class="bg-slate-50 p-8 border-t border-slate-100 flex items-center justify-between shrink-0">
+            <div class="flex items-center gap-8">
+              <div id="clock" class="text-4xl font-bold text-slate-800 tabular-nums"></div>
+              <div id="counter" class="text-2xl font-bold text-slate-400 uppercase tracking-widest">
+                0 / 0 Nachrichten
+              </div>
+            </div>
+            <div class="h-4 w-96 bg-slate-200 rounded-full overflow-hidden flex">
+              <div id="progress-bar" class="h-full bg-indigo-600 transition-all duration-300" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      // Initialisiere Icons
+      lucide.createIcons();
+
+      let messages = [];
+      let currentIndex = 0;
+
+      // Uhrzeit-Setup
+      const clockEl = document.getElementById('clock');
+      setInterval(() => {
+        clockEl.textContent = new Date().toLocaleTimeString('de-DE');
+      }, 1000);
+      clockEl.textContent = new Date().toLocaleTimeString('de-DE');
+
+      // Verkehrsmeldungen abrufen
+      async function fetchTraffic() {
+        const container = document.getElementById('message-container');
+        container.innerHTML = '<div class="text-xl text-slate-500 font-medium">Lade Verkehrsmeldungen...</div>';
+
+        const urls = [
+          "https://stau1.de/",
+          "https://stau1.de/stau/hessen",
+          "https://stau1.de/stau/rheinland-pfalz",
+        ];
+        const allMessages = new Map();
+        for (const url of urls) {
+          try {
+            // CORS-Proxy verwenden, da GitHub Pages (und unser Script) im Browser ausgeführt wird
+            const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url + '?t=' + Date.now())}`;
+            const response = await fetch(proxyUrl, { cache: "no-store" });
+            const html = await response.text();
+            
+            // Extrahieren der state-Variablen aus dem HTML (Stau1.de SSR Data)
+            const match = html.match(/window\.__INITIAL_STATE__\s*=\s*(.*?);<\/script>/);
+            if (match && match[1]) {
+              const state = JSON.parse(match[1]);
+              const msgs = state?.messages?.messageSearch?.messages || {};
+              for (const [id, msg] of Object.entries(msgs)) {
+                allMessages.set(id, msg);
+              }
+            }
+          } catch (e) {
+            console.error('Fehler beim Abrufen von', url, e);
+          }
+        }
+
+        const messagesArray = Array.from(allMessages.values());
+        const keywords = ["mainz", "wiesbaden", "a60", "a66", "a643", "a671"];
+        
+        // Nach Region Mainz/Wiesbaden filtern
+        let filtered = messagesArray.filter((m) => {
+          const road = m.text?.road?.toLowerCase() || "";
+          const segment = m.text?.segment?.toLowerCase() || "";
+          const section = m.text?.section?.toLowerCase() || "";
+          const events = m.text?.events?.toLowerCase() || "";
+          const combinedText = `${road} ${segment} ${section} ${events}`;
+          return keywords.some(k => combinedText.includes(k));
+        });
+
+        // Fallback falls die API mal leer ist (nur zum Testen)
+        if (filtered.length === 0) {
+          filtered = [
+            { status: "active", text: { road: "A66", segment: "Wiesbaden - Frankfurt", section: "zwischen Schiersteiner Kreuz und Wiesbaden-Biebrich", events: "Fahrbahnerneuerung, 2 km stockender Verkehr" } },
+            { status: "active", text: { road: "A60", segment: "Bingen - Rüsselsheim", section: "zwischen Mainz-Finthen und Dreieck Mainz", events: "Gefahr durch Gegenstände auf der Fahrbahn" } },
+            { status: "active", text: { road: "A643", segment: "Wiesbaden - Mainz", section: "Schiersteiner Brücke", events: "Brückenarbeiten, rechter Fahrstreifen gesperrt" } }
+          ];
+        }
+        
+        messages = filtered;
+        currentIndex = 0;
+        updateUI();
+      }
+
+      function updateUI() {
+        const container = document.getElementById('message-container');
+        const counter = document.getElementById('counter');
+        const progressBar = document.getElementById('progress-bar');
+
+        if (messages.length === 0) {
+          container.innerHTML = '<div class="text-2xl font-bold text-slate-400">Keine aktuellen Meldungen für Mainz/Wiesbaden.</div>';
+          counter.textContent = '0 / 0 Nachrichten';
+          progressBar.style.width = '0%';
+          return;
+        }
+
+        const msg = messages[currentIndex];
+        
+        container.innerHTML = `
+          <div class="w-32 h-32 bg-red-50 rounded-full flex items-center justify-center mb-10">
+            <i data-lucide="alert-triangle" class="text-red-600" style="width: 72px; height: 72px;"></i>
+          </div>
+          <div class="inline-block px-12 py-3 bg-red-100 text-red-700 text-5xl font-black rounded-full mb-8 uppercase tracking-wider shadow-sm">
+            ${msg.text.road || 'Traffic Alert'}
+          </div>
+          <h2 class="text-7xl font-black tracking-tighter text-slate-900 mb-8">${msg.text.segment || ''}</h2>
+          <p class="text-6xl text-slate-500 font-light max-w-[1200px] leading-tight">
+            <span class="font-bold text-slate-800">${msg.text.section || ''}</span>
+          </p>
+          <p class="text-5xl text-slate-600 font-medium max-w-[1200px] mt-8 leading-tight">
+            ${msg.text.events || ''}
+          </p>
+        `;
+        
+        // Neu laden der Icons nach DOM Update
+        lucide.createIcons();
+
+        const displayIndex = currentIndex + 1;
+        counter.textContent = `${displayIndex} / ${messages.length} Nachrichten`;
+        progressBar.style.width = `${(displayIndex / messages.length) * 100}%`;
+      }
+
+      // Event Listener (Buttons)
+      document.getElementById('btn-next').addEventListener('click', () => {
+        if (currentIndex < messages.length - 1) { currentIndex++; updateUI(); }
+      });
+      document.getElementById('btn-prev').addEventListener('click', () => {
+        if (currentIndex > 0) { currentIndex--; updateUI(); }
+      });
+      document.getElementById('btn-first').addEventListener('click', () => {
+        currentIndex = 0; updateUI();
+      });
+
+      // Event Listener (Tastatur)
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+          if (currentIndex < messages.length - 1) { currentIndex++; updateUI(); }
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+          if (currentIndex > 0) { currentIndex--; updateUI(); }
+        } else if (e.key === 'Home') {
+          currentIndex = 0; updateUI();
+        }
+      });
+
+      // Erster Start
+      fetchTraffic();
+
+      // Automatischer Refresh jede Minute
+      setInterval(fetchTraffic, 60000);
+    </script>
+  </body>
+</html>

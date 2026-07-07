@@ -1,0 +1,6 @@
+{
+  "name": "TrafficLine ModerationsAssistent",
+  "description": "A classic-style traffic reporting tool for Mainz and Wiesbaden using the Stau1.de API.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

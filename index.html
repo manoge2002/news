@@ -11,21 +11,6 @@
   </head>
   <body class="flex flex-col h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden selection:bg-indigo-300">
     <main class="flex flex-1 overflow-hidden">
-      <!-- Linke Sidebar -->
-      <aside class="flex flex-col w-[400px] bg-white border-r border-slate-200 shrink-0 p-8 space-y-4">
-        <button id="btn-first" class="px-6 py-4 bg-indigo-50 text-indigo-700 text-xl font-bold rounded-xl border border-indigo-200 hover:bg-indigo-100 transition-colors focus:outline-none focus:ring-4 focus:ring-indigo-500 cursor-pointer">
-          Erste Nachricht
-        </button>
-        <div class="flex flex-col gap-6 pt-6">
-          <button id="btn-next" class="flex items-center justify-center py-12 bg-white border-2 border-slate-200 rounded-xl shadow-sm hover:bg-slate-50 transition-colors focus:outline-none focus:ring-4 focus:ring-indigo-500 cursor-pointer" aria-label="Vor">
-            <i data-lucide="arrow-up" style="width: 72px; height: 72px;" class="text-slate-800"></i>
-          </button>
-          <button id="btn-prev" class="flex items-center justify-center py-12 bg-white border-2 border-slate-200 rounded-xl shadow-sm hover:bg-slate-50 transition-colors focus:outline-none focus:ring-4 focus:ring-indigo-500 cursor-pointer" aria-label="Zurück">
-            <i data-lucide="arrow-down" style="width: 72px; height: 72px;" class="text-slate-800"></i>
-          </button>
-        </div>
-      </aside>
-
       <!-- Hauptbereich -->
       <section class="flex flex-col flex-1 h-full min-w-0 p-8">
         <div id="main-card" class="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col flex-1 transition-colors duration-300">
@@ -92,6 +77,7 @@
             .replace(/\bAS\b/g, "Anschlussstelle")
             .replace(/\bAK\b/g, "Autobahnkreuz")
             .replace(/\bAD\b/g, "Autobahndreieck")
+            .replace(/\d+(?:\.\d+)?\s*km\s+(?:hinter|vor)\s+/g, "")
             .replace(/->/g, "→")
             .replace(/\s+-\s+/g, " → ");
         }
@@ -171,7 +157,21 @@
         
         if (currentIds !== newIds) {
           pendingMessages = newMessages;
-          document.getElementById('btn-refresh').classList.remove('hidden');
+          // Wenn der Fortschrittsbalken bei 100% ist (Ende der Meldungen),
+          // können wir sofort updaten.
+          if (messages.length > 0 && currentIndex === messages.length) {
+            messages = pendingMessages;
+            currentIndex = 0;
+            document.getElementById('btn-refresh').classList.add('hidden');
+            updateUI();
+          } else if (messages.length === 0) {
+            messages = pendingMessages;
+            currentIndex = 0;
+            document.getElementById('btn-refresh').classList.add('hidden');
+            updateUI();
+          } else {
+            document.getElementById('btn-refresh').classList.remove('hidden');
+          }
         }
       }
 
@@ -186,6 +186,25 @@
           counter.textContent = '0 / 0 Nachrichten';
           progressBar.style.width = '0%';
           if (mainCard) mainCard.className = "bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col flex-1 transition-colors duration-300";
+          return;
+        }
+
+        if (currentIndex === messages.length) {
+          if (mainCard) {
+            mainCard.className = `bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col flex-1 transition-colors duration-300`;
+          }
+          container.innerHTML = `
+            <div class="flex flex-col items-center justify-center gap-8">
+              <i data-lucide="check-circle-2" class="text-indigo-400" style="width: 120px; height: 120px;"></i>
+              <h2 class="text-6xl font-black tracking-tighter text-slate-800 text-center">
+                Ende der Meldungen
+              </h2>
+              <p class="text-4xl text-slate-500 font-medium">Alle aktuellen Verkehrsinformationen gelesen.</p>
+            </div>
+          `;
+          lucide.createIcons();
+          counter.textContent = `${messages.length} / ${messages.length} Nachrichten`;
+          progressBar.style.width = `100%`;
           return;
         }
 
@@ -220,52 +239,69 @@
         const formattedSegment = msg.text.segment || '';
 
         container.innerHTML = `
-          <div class="inline-block px-12 py-3 ${badgeBgClass} ${badgeTextClass} text-5xl font-black rounded-full mb-8 uppercase tracking-wider shadow-sm">
+          <div class="inline-block px-10 py-2 ${badgeBgClass} ${badgeTextClass} text-4xl font-black rounded-full mb-6 uppercase tracking-wider shadow-sm">
             ${msg.text.road || 'Traffic Alert'}
           </div>
-          <h2 class="text-7xl font-black tracking-tighter ${textClass} mb-8">${formattedSegment}</h2>
-          <p class="text-6xl ${textClass} font-light max-w-[1200px] leading-tight opacity-90">
+          <h2 class="text-6xl font-black tracking-tighter ${textClass} mb-6">${formattedSegment}</h2>
+          <p class="text-5xl ${textClass} font-light max-w-[1200px] leading-tight opacity-90">
             <span class="font-bold">${msg.text.section || ''}</span>
           </p>
-          <p class="text-5xl ${textClass} font-medium max-w-[1200px] mt-8 leading-tight">
+          <p class="text-4xl ${textClass} font-medium max-w-[1200px] mt-6 leading-tight">
             ${msg.text.events || ''}
           </p>
-          ${msg.pubStr ? `<p class="text-3xl ${textClass} font-bold mt-12 uppercase tracking-widest opacity-60">${msg.pubStr}</p>` : ''}
+          ${msg.pubStr ? `<p class="text-2xl ${textClass} font-bold mt-10 uppercase tracking-widest opacity-60">${msg.pubStr}</p>` : ''}
         `;
         
         // Neu laden der Icons nach DOM Update
         lucide.createIcons();
 
-        const displayIndex = currentIndex + 1;
+        const displayIndex = currentIndex;
         counter.textContent = `${displayIndex} / ${messages.length} Nachrichten`;
-        progressBar.style.width = `${(displayIndex / messages.length) * 100}%`;
+        progressBar.style.width = messages.length > 0 ? `${(displayIndex / messages.length) * 100}%` : '0%';
+      }
+
+      // Funktion zum manuellen Aktualisieren
+      function doRefresh() {
+        if (!document.getElementById('btn-refresh').classList.contains('hidden')) {
+          messages = pendingMessages;
+          currentIndex = 0;
+          document.getElementById('btn-refresh').classList.add('hidden');
+          updateUI();
+        } else {
+          fetchTrafficInitial();
+        }
       }
 
       // Event Listener (Buttons)
-      document.getElementById('btn-next').addEventListener('click', () => {
-        if (currentIndex < messages.length - 1) { currentIndex++; updateUI(); }
-      });
-      document.getElementById('btn-prev').addEventListener('click', () => {
-        if (currentIndex > 0) { currentIndex--; updateUI(); }
-      });
-      document.getElementById('btn-first').addEventListener('click', () => {
-        currentIndex = 0; updateUI();
-      });
-      document.getElementById('btn-refresh').addEventListener('click', (e) => {
-        messages = pendingMessages;
-        currentIndex = 0;
-        e.currentTarget.classList.add('hidden');
-        updateUI();
-      });
+      document.getElementById('btn-refresh').addEventListener('click', doRefresh);
 
       // Event Listener (Tastatur)
       window.addEventListener('keydown', (e) => {
-        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-          if (currentIndex < messages.length - 1) { currentIndex++; updateUI(); }
-        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        // Alt + Ctrl + Shift + Y -> Nächste Karte
+        if (e.altKey && e.ctrlKey && e.shiftKey && e.code === 'KeyY') {
+          if (currentIndex < messages.length) { currentIndex++; updateUI(); }
+          return;
+        }
+        // Ctrl + Shift + Y -> Vorherige Karte
+        if (!e.altKey && e.ctrlKey && e.shiftKey && e.code === 'KeyY') {
           if (currentIndex > 0) { currentIndex--; updateUI(); }
-        } else if (e.key === 'Home') {
-          currentIndex = 0; updateUI();
+          return;
+        }
+        // Alt + Shift + Y -> Aktualisieren
+        if (e.altKey && !e.ctrlKey && e.shiftKey && e.code === 'KeyY') {
+          doRefresh();
+          return;
+        }
+
+        // Normale Navigation (ohne Modifier)
+        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+          if (e.key === 'ArrowDown') {
+            if (currentIndex < messages.length) { currentIndex++; updateUI(); }
+          } else if (e.key === 'ArrowUp') {
+            if (currentIndex > 0) { currentIndex--; updateUI(); }
+          } else if (e.key.toLowerCase() === 'r') {
+            doRefresh();
+          }
         }
       });
 

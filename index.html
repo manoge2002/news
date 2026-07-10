@@ -24,11 +24,6 @@
             <i data-lucide="arrow-down" style="width: 72px; height: 72px;" class="text-slate-800"></i>
           </button>
         </div>
-        <div class="flex flex-col gap-4 mt-8">
-          <div class="bg-red-50 text-red-700 font-bold text-center py-4 rounded-xl border-2 border-red-200 text-xl">Traffic</div>
-          <div class="bg-emerald-50 text-emerald-700 font-bold text-center py-4 rounded-xl border-2 border-emerald-200 text-xl">UserTraffic</div>
-          <div class="bg-emerald-50 text-emerald-700 font-bold text-center py-4 rounded-xl border-2 border-emerald-200 text-xl">Radar</div>
-        </div>
       </aside>
 
       <!-- Hauptbereich -->
@@ -47,6 +42,9 @@
               <div id="counter" class="text-2xl font-bold text-slate-400 uppercase tracking-widest">
                 0 / 0 Nachrichten
               </div>
+              <button id="btn-refresh" class="hidden ml-4 px-6 py-2 bg-indigo-600 text-white text-xl font-bold rounded-lg shadow hover:bg-indigo-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer flex items-center gap-2">
+                <i data-lucide="refresh-cw" class="w-6 h-6"></i> Neue Meldungen
+              </button>
             </div>
             <div class="h-4 w-96 bg-slate-200 rounded-full overflow-hidden flex">
               <div id="progress-bar" class="h-full bg-indigo-600 transition-all duration-300" style="width: 0%"></div>
@@ -61,6 +59,7 @@
       lucide.createIcons();
 
       let messages = [];
+      let pendingMessages = [];
       let currentIndex = 0;
 
       // Uhrzeit-Setup
@@ -70,12 +69,8 @@
       }, 1000);
       clockEl.textContent = new Date().toLocaleTimeString('de-DE');
 
-      // Verkehrsmeldungen abrufen
-      async function fetchTraffic() {
-        const container = document.getElementById('message-container');
-        container.innerHTML = '<div class="text-xl text-slate-500 font-medium">Lade Verkehrsmeldungen...</div>';
-
-        const roads = ["A3", "A5", "A60", "A66", "A67", "A643", "A671", "A661"];
+      async function fetchTrafficData() {
+        const roads = ["A60", "A63", "A66", "A643", "A671", "B40", "B43"];
         const warnings = [];
         
         for (const road of roads) {
@@ -126,6 +121,7 @@
           const events = eventsLines.join(' • ') || w.description[2] || "Verkehrsbehinderung";
       
           return {
+             id: w.identifier,
              text: {
                road: road,
                segment: formatText(segment),
@@ -136,8 +132,8 @@
           };
         });
 
-        // Filter für Mainz/Wiesbaden und Umgebung
-        const keywords = ["mainz", "wiesbaden", "schierstein", "wallau", "mönchhof", "raunheim", "rüsselsheim", "bingen", "darmstadt", "frankfurt"];
+        // Filter für das gewünschte Gebiet
+        const keywords = ["bingen", "rüsselsheim", "nieder-olm", "mainz", "wiesbaden", "frauenstein", "eschborn", "frankfurt", "griesheim", "kelsterbach", "hofheim", "diedenbergen", "schierstein", "wallau", "mönchhof", "raunheim", "darmstadt"];
         
         let filtered = msgs.filter((m) => {
           const road = m.text?.road?.toLowerCase() || "";
@@ -148,14 +144,35 @@
           return keywords.some(k => combinedText.includes(k));
         });
 
-        // Fallback: Wenn für die direkten Keywords nichts gefunden wurde, zeige einfach alle gesammelten Meldungen
         if (filtered.length === 0 && msgs.length > 0) {
           filtered = msgs;
         }
         
-        messages = filtered;
+        return filtered;
+      }
+
+      // Initiale Verkehrsmeldungen abrufen
+      async function fetchTrafficInitial() {
+        const container = document.getElementById('message-container');
+        container.innerHTML = '<div class="text-xl text-slate-500 font-medium">Lade Verkehrsmeldungen...</div>';
+        
+        messages = await fetchTrafficData();
         currentIndex = 0;
         updateUI();
+      }
+
+      // Background Check für neue Meldungen
+      async function fetchTrafficBackground() {
+        const newMessages = await fetchTrafficData();
+        
+        // Vergleichen anhand der IDs
+        const currentIds = messages.map(m => m.id).sort().join(',');
+        const newIds = newMessages.map(m => m.id).sort().join(',');
+        
+        if (currentIds !== newIds) {
+          pendingMessages = newMessages;
+          document.getElementById('btn-refresh').classList.remove('hidden');
+        }
       }
 
       function updateUI() {
@@ -234,6 +251,12 @@
       document.getElementById('btn-first').addEventListener('click', () => {
         currentIndex = 0; updateUI();
       });
+      document.getElementById('btn-refresh').addEventListener('click', (e) => {
+        messages = pendingMessages;
+        currentIndex = 0;
+        e.currentTarget.classList.add('hidden');
+        updateUI();
+      });
 
       // Event Listener (Tastatur)
       window.addEventListener('keydown', (e) => {
@@ -247,10 +270,10 @@
       });
 
       // Erster Start
-      fetchTraffic();
+      fetchTrafficInitial();
 
-      // Automatischer Refresh jede Minute
-      setInterval(fetchTraffic, 60000);
+      // Automatischer Background-Check jede Minute
+      setInterval(fetchTrafficBackground, 60000);
     </script>
   </body>
 </html>
